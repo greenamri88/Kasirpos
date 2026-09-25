@@ -1,2 +1,1513 @@
-# Kasirpos
-Kasir Pos
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>POS Kasir & Pembukuan Offline</title>
+    <!-- Library Externals (Di-load via CDN / Cacheable for Offline) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --primary: #1e3a8a;
+            --accent: #2563eb;
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --radius: 10px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg); color: var(--text); padding-bottom: 30px; -webkit-tap-highlight-color: transparent; }
+
+        /* Header & Top Navigation */
+        header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 16px; position: sticky; top: 0; z-index: 100; }
+        .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .app-title { font-size: 1.1rem; font-weight: 800; color: var(--primary); }
+        .status-badge { font-size: 0.7rem; padding: 3px 8px; border-radius: 20px; font-weight: bold; }
+        .status-open { background: #dcfce7; color: #15803d; }
+        .status-closed { background: #fee2e2; color: #b91c1c; }
+
+        /* Top Horizontal Nav Scrollable */
+        .top-nav { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+        .top-nav::-webkit-scrollbar { display: none; }
+        .nav-btn { flex: 0 0 auto; padding: 8px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
+        .nav-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        /* Main Container & Cards */
+        .container { padding: 12px; max-width: 600px; margin: 0 auto; }
+        .card { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .card-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; color: var(--primary); display: flex; justify-content: space-between; align-items: center; }
+
+        /* Buttons & Forms */
+        .btn { width: 100%; padding: 12px; border: none; border-radius: var(--radius); background: var(--accent); color: white; font-weight: bold; cursor: pointer; font-size: 0.9rem; text-align: center; }
+        .btn-success { background: var(--success); }
+        .btn-danger { background: var(--danger); }
+        .btn-warning { background: var(--warning); color: white; }
+        .btn-secondary { background: #cbd5e1; color: var(--text); }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+        .btn-sm { padding: 6px 10px; font-size: 0.75rem; width: auto; border-radius: 6px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+
+        .form-group { margin-bottom: 10px; }
+        .form-group label { display: block; font-size: 0.75rem; font-weight: 600; margin-bottom: 4px; color: var(--text-muted); }
+        .form-control { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; background: var(--surface); color: var(--text); }
+
+        /* POS Layout */
+        .product-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 70px; }
+        .product-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; height: 100px; display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; position: relative; }
+        .product-card .price { font-weight: 800; color: var(--accent); font-size: 0.9rem; }
+        .product-card .category-tag { position: absolute; top: 8px; right: 8px; font-size: 0.65rem; background: #eff6ff; color: var(--accent); padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+
+        /* Bottom Cart Bar */
+        .cart-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; z-index: 99; max-width: 600px; margin: 0 auto; }
+
+        /* Modal Overlay */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: flex-end; z-index: 2000; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: var(--surface); width: 100%; max-width: 600px; border-radius: 16px 16px 0 0; padding: 16px; max-height: 85vh; overflow-y: auto; }
+
+        /* Tables & Lists */
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+        .data-table th, .data-table td { border-bottom: 1px solid var(--border); padding: 8px; text-align: left; }
+        .data-table th { background: var(--bg); font-weight: 600; color: var(--text-muted); }
+
+        /* Option Chips */
+        .chip-group { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        .chip { padding: 6px 12px; border: 1px solid var(--border); border-radius: 20px; font-size: 0.75rem; cursor: pointer; background: var(--bg); }
+        .chip.selected { background: var(--accent); color: white; border-color: var(--accent); font-weight: bold; }
+
+        /* Print Media Styles */
+        @media print {
+            body * { visibility: hidden; }
+            #printable-area, #printable-area * { visibility: visible; }
+            #printable-area { position: absolute; left: 0; top: 0; width: 100%; }
+            .sticker-page { page-break-after: always; padding: 5mm; width: 50mm; font-family: monospace; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-top">
+            <div>
+                <span class="app-title" id="txt-store-name">Arabika To Go</span>
+                <span id="op-badge" class="status-badge status-closed">CLOSED</span>
+            </div>
+            <div style="display:flex; gap:4px;">
+                <button class="btn btn-sm btn-success" onclick="app.toggleOpen(true)">Open</button>
+                <button class="btn btn-sm btn-danger" onclick="app.toggleOpen(false)">Close</button>
+            </div>
+        </div>
+        <!-- Menu Navigasi Atas -->
+        <nav class="top-nav" id="top-nav-menu">
+            <button class="nav-btn active" onclick="app.switchTab('dashboard')">🏠 Dashboard</button>
+            <button class="nav-btn" onclick="app.switchTab('pos')">🛒 Kasir</button>
+            <button class="nav-btn" onclick="app.switchTab('history')">📜 Riwayat</button>
+            <button class="nav-btn" onclick="app.switchTab('products')">📦 Master Produk</button>
+
+            <button class="nav-btn" onclick="app.switchTab('stock')">📊 Stok & Bahan</button>
+            <button class="nav-btn" onclick="app.switchTab('expenses')">💸 Pengeluaran</button>
+            <button class="nav-btn" onclick="app.switchTab('reports')">📈 Laporan & Laba Rugi</button>
+            <button class="nav-btn" onclick="app.switchTab('closing')">🔒 Tutup Kas</button>
+            <button class="nav-btn" onclick="app.switchTab('settings')">⚙️ Pengaturan & Backup</button>
+        </nav>
+    </header>
+
+    <main class="container" id="app-body">
+        <!-- Rendered Dynamically -->
+    </main>
+
+    <!-- Modal System -->
+    <div class="modal-overlay" id="app-modal">
+        <div class="modal-content" id="modal-body"></div>
+    </div>
+
+    <!-- Hidden Printable Area for Receipts & Stickers -->
+    <div id="printable-area"></div>
+
+    <script>
+    /* ==========================================================================
+       1. DATABASE ENGINE (IndexedDB)
+       ========================================================================== */
+    const DB_NAME = "POS_FULL_DATABASE";
+    const DB_VERSION = 1;
+    let db = null;
+
+    const DB = {
+        async init() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(DB_NAME, DB_VERSION);
+                req.onupgradeneeded = (e) => {
+                    const d = e.target.result;
+                    const stores = [
+                        'settings', 'products', 'categories', 'ingredients', 
+                        'sales', 'expenses', 'purchases', 'stockMovements', 
+                        'journalEntries', 'dailyClosings', 'addons'
+                    ];
+                    stores.forEach(s => {
+                        if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' });
+                    });
+                };
+                req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+                req.onerror = (e) => reject(e);
+            });
+        },
+        async getAll(store) {
+            return new Promise((resolve) => {
+                const tx = db.transaction(store, 'readonly');
+                tx.objectStore(store).getAll().onsuccess = (e) => resolve(e.target.result || []);
+            });
+        },
+        async get(store, id) {
+            return new Promise((resolve) => {
+                const tx = db.transaction(store, 'readonly');
+                tx.objectStore(store).get(id).onsuccess = (e) => resolve(e.target.result);
+            });
+        },
+        async put(store, data) {
+            return new Promise((resolve) => {
+                const tx = db.transaction(store, 'readwrite');
+                tx.objectStore(store).put(data);
+                tx.oncomplete = () => resolve(true);
+            });
+        },
+        async delete(store, id) {
+            return new Promise((resolve) => {
+                const tx = db.transaction(store, 'readwrite');
+                tx.objectStore(store).delete(id);
+                tx.oncomplete = () => resolve(true);
+            });
+        },
+        async clearStore(store) {
+            return new Promise((resolve) => {
+                const tx = db.transaction(store, 'readwrite');
+                tx.objectStore(store).clear();
+                tx.oncomplete = () => resolve(true);
+            });
+        }
+    };
+
+    /* ==========================================================================
+       2. APPLICATION LOGIC & STATE
+       ========================================================================== */
+    const app = {
+        isOpen: false,
+        currentTab: 'dashboard',
+        cart: [],
+        selectedPlatform: 'Offline',
+        settings: {},
+        chartInstance: null,
+
+        async init() {
+            await DB.init();
+            await this.loadSettings();
+            await this.seedInitialData();
+            this.switchTab('dashboard');
+        },
+
+        async loadSettings() {
+            let s = await DB.get('settings', 'config');
+            if (!s) {
+                s = {
+                    id: 'config',
+                    storeName: 'Arabika To Go',
+                    address: 'Jl. Utama No. 12',
+                    phone: '08123456789',
+                    receiptFooter: 'Terima kasih atas kunjungannya!',
+                    extraShotPrice: 3000,
+                    largePrice: 4000,
+                    markupGoFood: 20,
+                    markupGrabFood: 20,
+                    markupShopeeFood: 25,
+                    paperSize: '58mm',
+                    stickerSize: '50x30'
+                };
+                await DB.put('settings', s);
+            }
+            this.settings = s;
+            document.getElementById('txt-store-name').innerText = s.storeName;
+        },
+
+        async seedInitialData() {
+            const products = await DB.getAll('products');
+            if (products.length === 0) {
+                const demoProducts = [
+                    { id: 'P01', name: 'Kopi Susu', category: 'Minuman', type: 'drink', price: 15000, hpp: 5500, stock: 100, unit: 'cup', minStock: 10, status: 'Active' },
+                    { id: 'P02', name: 'Americano', category: 'Minuman', type: 'drink', price: 12000, hpp: 3500, stock: 100, unit: 'cup', minStock: 10, status: 'Active' },
+                    { id: 'P03', name: 'Burger Ayam', category: 'Makanan', type: 'food', price: 20000, hpp: 9000, stock: 50, unit: 'pcs', minStock: 5, status: 'Active' },
+                    { id: 'P04', name: 'Waffle Cokelat', category: 'Makanan', type: 'food', price: 18000, hpp: 7500, stock: 40, unit: 'pcs', minStock: 5, status: 'Active' }
+                ];
+                for (let p of demoProducts) await DB.put('products', p);
+
+                const demoAddons = [
+                    { id: 'A01', name: 'Extra Pedas', price: 0, category: 'food' },
+                    { id: 'A02', name: 'Keju Slice', price: 3000, category: 'food' },
+                    { id: 'A03', name: 'Telur Dadar', price: 4000, category: 'food' }
+                ];
+                for (let a of demoAddons) await DB.put('addons', a);
+            }
+        },
+
+        toggleOpen(status) {
+            this.isOpen = status;
+            const badge = document.getElementById('op-badge');
+            if (status) {
+                badge.className = "status-badge status-open";
+                badge.innerText = "OPEN";
+                alert("Toko Dibuka (OPEN)! Semua fungsi kasir aktif.");
+            } else {
+                badge.className = "status-badge status-closed";
+                badge.innerText = "CLOSED";
+                alert("Toko Ditutup (CLOSED).");
+            }
+            this.switchTab(this.currentTab);
+        },
+
+        switchTab(tab) {
+            this.currentTab = tab;
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            const activeBtn = Array.from(document.querySelectorAll('.nav-btn')).find(b => b.getAttribute('onclick').includes(tab));
+            if (activeBtn) activeBtn.classList.add('active');
+
+            const body = document.getElementById('app-body');
+
+            if (!this.isOpen && tab === 'pos') {
+                body.innerHTML = `
+                    <div class="card" style="text-align:center; padding:30px 16px;">
+                        <h3>🔒 TOKO MASIH CLOSED</h3>
+                        <p style="color:var(--text-muted); font-size:0.85rem; margin:10px 0;">Klik tombol <b>Open</b> di pojok kanan atas untuk membuka operasional toko dan melayani kasir.</p>
+                        <button class="btn btn-success" onclick="app.toggleOpen(true)">OPEN TOKO SEKARANG</button>
+                    </div>
+                `;
+                return;
+            }
+
+            if (tab === 'dashboard') this.renderDashboard(body);
+            else if (tab === 'pos') this.renderPOS(body);
+            else if (tab === 'history') this.renderHistory(body);
+            else if (tab === 'products') this.renderProducts(body);
+            else if (tab === 'stock') this.renderStock(body);
+            else if (tab === 'expenses') this.renderExpenses(body);
+            else if (tab === 'reports') this.renderReports(body);
+            else if (tab === 'closing') this.renderClosing(body);
+            else if (tab === 'settings') this.renderSettings(body);
+        },
+
+        /* ==========================================================================
+           3. DASHBOARD MODULE
+           ========================================================================== */
+        async renderDashboard(container) {
+            const sales = await DB.getAll('sales');
+            const expenses = await DB.getAll('expenses');
+            const today = new Date().toISOString().split('T')[0];
+
+            const todaySales = sales.filter(s => s.date === today && s.status !== 'CANCELLED');
+            const todayExpenses = expenses.filter(e => e.date === today);
+
+            const omzet = todaySales.reduce((a, c) => a + c.total, 0);
+            const hpp = todaySales.reduce((a, c) => a + c.totalHpp, 0);
+            const totalExp = todayExpenses.reduce((a, c) => a + c.amount, 0);
+            const grossProfit = omzet - hpp;
+            const netProfit = grossProfit - totalExp;
+
+            // Compute Comparisons
+            const yesterdayDate = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+            const yesterdaySales = sales.filter(s => s.date === yesterdayDate && s.status !== 'CANCELLED');
+            const omzetYesterday = yesterdaySales.reduce((a, c) => a + c.total, 0);
+            
+            const diffYesterday = omzetYesterday === 0 ? 100 : Math.round(((omzet - omzetYesterday) / omzetYesterday) * 100);
+
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-title">
+                        <span>Ringkasan Hari Ini (${today})</span>
+                        <span style="font-size:0.75rem; color:var(--text-muted);">${todaySales.length} Transaksi</span>
+                    </div>
+                    <div class="grid-2">
+                        <div style="background:#eff6ff; padding:10px; border-radius:8px;">
+                            <small style="color:var(--text-muted)">Omzet</small>
+                            <h4 style="color:var(--accent)">Rp ${omzet.toLocaleString()}</h4>
+                        </div>
+                        <div style="background:#f0fdf4; padding:10px; border-radius:8px;">
+                            <small style="color:var(--text-muted)">Laba Bersih Est.</small>
+                            <h4 style="color:var(--success)">Rp ${netProfit.toLocaleString()}</h4>
+                        </div>
+                    </div>
+                    <div class="grid-3" style="margin-top:8px;">
+                        <div style="background:var(--bg); padding:8px; border-radius:6px; font-size:0.75rem;">
+                            <span>HPP:</span><br><b>Rp ${hpp.toLocaleString()}</b>
+                        </div>
+                        <div style="background:var(--bg); padding:8px; border-radius:6px; font-size:0.75rem;">
+                            <span>Pengeluaran:</span><br><b>Rp ${totalExp.toLocaleString()}</b>
+                        </div>
+                        <div style="background:var(--bg); padding:8px; border-radius:6px; font-size:0.75rem;">
+                            <span>Vs Kemarin:</span><br><b style="color:${diffYesterday >= 0 ? 'var(--success)' : 'var(--danger)'}">${diffYesterday >= 0 ? '+' : ''}${diffYesterday}%</b>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Grafik Omzet 7 Hari Terakhir</div>
+                    <canvas id="chartOmzet" style="width:100%; height:180px;"></canvas>
+                </div>
+            `;
+
+            this.renderChart(sales);
+        },
+
+        renderChart(sales) {
+            const ctx = document.getElementById('chartOmzet');
+            if (!ctx) return;
+
+            const labels = [];
+            const dataOmzet = [];
+
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(Date.now() - (i * 86400000)).toISOString().split('T')[0];
+                labels.push(d.slice(5));
+                const daySales = sales.filter(s => s.date === d && s.status !== 'CANCELLED');
+                dataOmzet.push(daySales.reduce((a, c) => a + c.total, 0));
+            }
+
+            if (this.chartInstance) this.chartInstance.destroy();
+            this.chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Omzet (Rp)',
+                        data: dataOmzet,
+                        borderColor: '#2563eb',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: { responsive: true, plugins: { legend: { display: false } } }
+            });
+        },
+
+        /* ==========================================================================
+           4. POS KASIR MODULE
+           ========================================================================== */
+        async renderPOS(container) {
+            const products = await DB.getAll('products');
+            const activeProducts = products.filter(p => p.status === 'Active');
+
+            let cartTotal = this.calculateCartTotal();
+            let cartCount = this.cart.reduce((a, c) => a + c.qty, 0);
+
+            container.innerHTML = `
+                <!-- Platform Selector -->
+                <div class="card" style="padding:8px 12px; margin-bottom:8px;">
+                    <small style="font-weight:600; color:var(--text-muted);">PLATFORM PENJUALAN:</small>
+                    <div class="chip-group" style="margin-top:4px; margin-bottom:0;">
+                        ${['Offline', 'GoFood', 'GrabFood', 'ShopeeFood'].map(p => `
+                            <div class="chip ${this.selectedPlatform === p ? 'selected' : ''}" onclick="app.setPlatform('${p}')">${p}</div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Product Grid -->
+                <div class="product-grid">
+                    ${activeProducts.map(p => {
+                        const finalPrice = this.calculatePlatformPrice(p.price, this.selectedPlatform);
+                        return `
+                            <div class="product-card" onclick="app.configureProduct('${p.id}')">
+                                <span class="category-tag">${p.category}</span>
+                                <div style="font-weight:700; font-size:0.85rem; line-height:1.2;">${p.name}</div>
+                                <div>
+                                    <small style="font-size:0.7rem; color:var(--text-muted);">Stok: ${p.stock}</small>
+                                    <div class="price">Rp ${finalPrice.toLocaleString()}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+
+                <!-- Bottom Floating Cart Bar -->
+                <div class="cart-bar">
+                    <div>
+                        <small style="color:var(--text-muted); font-size:0.75rem;">${cartCount} Item | Platform: ${this.selectedPlatform}</small>
+                        <div style="font-size:1.1rem; font-weight:800; color:var(--accent);">Rp ${cartTotal.toLocaleString()}</div>
+                    </div>
+                    <button class="btn btn-sm" style="width:auto; padding:10px 18px; font-size:0.85rem;" onclick="app.openCart()">Keranjang 🛒</button>
+                </div>
+            `;
+        },
+
+        setPlatform(p) {
+            this.selectedPlatform = p;
+            this.renderPOS(document.getElementById('app-body'));
+        },
+
+        calculatePlatformPrice(basePrice, platform) {
+            let markup = 0;
+            if (platform === 'GoFood') markup = this.settings.markupGoFood || 20;
+            else if (platform === 'GrabFood') markup = this.settings.markupGrabFood || 20;
+            else if (platform === 'ShopeeFood') markup = this.settings.markupShopeeFood || 25;
+
+            if (markup === 0) return basePrice;
+
+            let price = basePrice * (1 + (markup / 100));
+            return Math.ceil(price / 1000) * 1000; // Pembulatan Rp1.000
+        },
+
+        async configureProduct(productId) {
+            const product = await DB.get('products', productId);
+            const addons = await DB.getAll('addons');
+            const availableAddons = addons.filter(a => a.category === product.type || a.category === 'all');
+
+            let basePrice = this.calculatePlatformPrice(product.price, this.selectedPlatform);
+
+            let html = `
+                <h3 style="margin-bottom:8px;">${product.name}</h3>
+                <p style="color:var(--text-muted); font-size:0.8rem; margin-bottom:12px;">Harga Dasar: Rp ${basePrice.toLocaleString()}</p>
+            `;
+
+            if (product.type === 'drink') {
+                html += `
+                    <div class="form-group">
+                        <label>Ukuran Size:</label>
+                        <div class="chip-group" id="opt-size">
+                            <div class="chip selected" onclick="app.selectChip(this)">Regular</div>
+                            <div class="chip" onclick="app.selectChip(this)">Large (+Rp ${this.settings.largePrice.toLocaleString()})</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Es (Ice):</label>
+                        <div class="chip-group" id="opt-ice">
+                            <div class="chip" onclick="app.selectChip(this)">Hot</div>
+                            <div class="chip" onclick="app.selectChip(this)">No Ice</div>
+                            <div class="chip" onclick="app.selectChip(this)">Less Ice</div>
+                            <div class="chip selected" onclick="app.selectChip(this)">Regular Ice</div>
+                            <div class="chip" onclick="app.selectChip(this)">Extra Ice</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Gula (Sugar):</label>
+                        <div class="chip-group" id="opt-sugar">
+                            <div class="chip" onclick="app.selectChip(this)">No Sugar</div>
+                            <div class="chip" onclick="app.selectChip(this)">Less Sugar</div>
+                            <div class="chip selected" onclick="app.selectChip(this)">Regular Sugar</div>
+                            <div class="chip" onclick="app.selectChip(this)">Extra Sugar</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Shot Espresso:</label>
+                        <div class="chip-group" id="opt-shot">
+                            <div class="chip selected" onclick="app.selectChip(this)">Normal</div>
+                            <div class="chip" onclick="app.selectChip(this)">+1 Shot (+Rp ${this.settings.extraShotPrice.toLocaleString()})</div>
+                            <div class="chip" onclick="app.selectChip(this)">+2 Shot (+Rp ${(this.settings.extraShotPrice * 2).toLocaleString()})</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="form-group">
+                        <label>Add-on / Extra:</label>
+                        <div class="chip-group" id="opt-addons">
+                            ${availableAddons.map(a => `
+                                <div class="chip" data-id="${a.id}" data-price="${a.price}" onclick="this.classList.toggle('selected')">${a.name} (+Rp ${a.price.toLocaleString()})</div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            html += `
+                <div class="form-group">
+                    <label>Catatan Khusus:</label>
+                    <input type="text" id="opt-notes" class="form-control" placeholder="Contoh: Tanpa Bawang / Sedikit Pedas">
+                </div>
+                <button class="btn btn-success" onclick="app.addToCartFromModal('${product.id}')">Tambah ke Keranjang</button>
+                <button class="btn btn-secondary" style="margin-top:6px;" onclick="app.closeModal()">Batal</button>
+            `;
+
+            this.showModal(html);
+        },
+
+        selectChip(el) {
+            const parent = el.parentElement;
+            parent.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+        },
+
+        async addToCartFromModal(productId) {
+            const product = await DB.get('products', productId);
+            let basePrice = this.calculatePlatformPrice(product.price, this.selectedPlatform);
+            let extraPrice = 0;
+            let optionsText = [];
+
+            if (product.type === 'drink') {
+                const size = document.querySelector('#opt-size .chip.selected')?.innerText || 'Regular';
+                const ice = document.querySelector('#opt-ice .chip.selected')?.innerText || 'Regular Ice';
+                const sugar = document.querySelector('#opt-sugar .chip.selected')?.innerText || 'Regular Sugar';
+                const shot = document.querySelector('#opt-shot .chip.selected')?.innerText || 'Normal';
+
+                if (size.includes('Large')) extraPrice += this.settings.largePrice;
+                if (shot.includes('+1 Shot')) extraPrice += this.settings.extraShotPrice;
+                if (shot.includes('+2 Shot')) extraPrice += (this.settings.extraShotPrice * 2);
+
+                optionsText.push(size, ice, sugar, shot);
+            } else {
+                const selectedAddons = document.querySelectorAll('#opt-addons .chip.selected');
+                selectedAddons.forEach(a => {
+                    extraPrice += parseInt(a.getAttribute('data-price'));
+                    optionsText.push(a.innerText.split(' (+')[0]);
+                });
+            }
+
+            const notes = document.getElementById('opt-notes').value.trim();
+            if (notes) optionsText.push(`Cat: ${notes}`);
+
+            const cartItem = {
+                cartId: 'C_' + Date.now(),
+                productId: product.id,
+                name: product.name,
+                type: product.type,
+                basePrice: basePrice,
+                extraPrice: extraPrice,
+                unitPrice: basePrice + extraPrice,
+                hpp: product.hpp,
+                qty: 1,
+                optionsText: optionsText.join(', '),
+                notes: notes
+            };
+
+            this.cart.push(cartItem);
+            this.closeModal();
+            this.renderPOS(document.getElementById('app-body'));
+        },
+
+        calculateCartTotal() {
+            return this.cart.reduce((a, c) => a + (c.unitPrice * c.qty), 0);
+        },
+
+        openCart() {
+            if (this.cart.length === 0) return alert("Keranjang masih kosong!");
+            let total = this.calculateCartTotal();
+
+            let html = `
+                <h3 style="margin-bottom:12px;">Keranjang Belanja (${this.selectedPlatform})</h3>
+                <div style="max-height:250px; overflow-y:auto; margin-bottom:12px;">
+                    ${this.cart.map((item, idx) => `
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);">
+                            <div style="flex:1;">
+                                <b>${item.name}</b><br>
+                                <small style="color:var(--text-muted);">${item.optionsText || '-'}</small><br>
+                                <b>Rp ${item.unitPrice.toLocaleString()}</b>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <button class="btn btn-sm btn-secondary" onclick="app.updateCartQty(${idx}, -1)">-</button>
+                                <span><b>${item.qty}</b></span>
+                                <button class="btn btn-sm btn-secondary" onclick="app.updateCartQty(${idx}, 1)">+</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <div class="form-group">
+                    <label>Nama Pelanggan / No. Order (Opsional):</label>
+                    <input type="text" id="checkout-customer" class="form-control" placeholder="Contoh: Budi / GF-8821">
+                </div>
+
+                <div style="display:flex; justify-content:space-between; font-weight:800; font-size:1.1rem; margin:12px 0;">
+                    <span>Total Pembayaran:</span>
+                    <span style="color:var(--accent);">Rp ${total.toLocaleString()}</span>
+                </div>
+
+                <button class="btn btn-success" onclick="app.processCheckout()">Proses & Simpan Transaksi</button>
+                <button class="btn btn-secondary" style="margin-top:6px;" onclick="app.closeModal()">Kembali</button>
+            `;
+
+            this.showModal(html);
+        },
+
+        updateCartQty(idx, change) {
+            this.cart[idx].qty += change;
+            if (this.cart[idx].qty <= 0) this.cart.splice(idx, 1);
+            if (this.cart.length === 0) {
+                this.closeModal();
+                this.renderPOS(document.getElementById('app-body'));
+            } else {
+                this.openCart();
+            }
+        },
+
+        async processCheckout() {
+            const customer = document.getElementById('checkout-customer').value.trim() || 'Pelanggan';
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0];
+            const timeStr = now.toTimeString().split(' ')[0].slice(0, 5);
+
+            const total = this.calculateCartTotal();
+            const totalHpp = this.cart.reduce((a, c) => a + (c.hpp * c.qty), 0);
+
+            const trx = {
+                id: 'TRX-' + Date.now().toString().slice(-8),
+                orderNo: 'ORD-' + Math.floor(1000 + Math.random() * 9000),
+                date: dateStr,
+                time: timeStr,
+                customer: customer,
+                platform: this.selectedPlatform,
+                items: [...this.cart],
+                total: total,
+                totalHpp: totalHpp,
+                status: 'COMPLETED',
+                createdAt: now.toISOString()
+            };
+
+            // Deduct Stock
+            for (let item of this.cart) {
+                const prod = await DB.get('products', item.productId);
+                if (prod) {
+                    prod.stock = Math.max(0, prod.stock - item.qty);
+                    await DB.put('products', prod);
+                }
+            }
+
+            // Save Sale
+            await DB.put('sales', trx);
+
+            // Auto Journal Entry
+            const journal = {
+                id: 'JRN-' + Date.now(),
+                date: dateStr,
+                ref: trx.id,
+                desc: `Penjualan ${trx.platform} #${trx.id}`,
+                debitAcc: 'Kas',
+                creditAcc: 'Penjualan',
+                amount: total
+            };
+            await DB.put('journalEntries', journal);
+
+            this.cart = [];
+            this.closeModal();
+            alert("Transaksi Berhasil Disimpan!");
+
+            this.showPostCheckoutOptions(trx);
+            this.renderPOS(document.getElementById('app-body'));
+        },
+
+        showPostCheckoutOptions(trx) {
+            let html = `
+                <h3 style="margin-bottom:12px; color:var(--success);">✅ Transaksi Berhasil!</h3>
+                <p>ID Transaksi: <b>${trx.id}</b></p>
+                <p style="margin-bottom:16px;">Total: <b>Rp ${trx.total.toLocaleString()}</b></p>
+                
+                <div class="grid-2">
+                    <button class="btn btn-accent" onclick="app.printReceipt('${trx.id}')">🖨️ Cetak Nota</button>
+                    <button class="btn btn-warning" onclick="app.printStickers('${trx.id}')">🏷️ Cetak Sticker</button>
+                </div>
+                <button class="btn btn-secondary" style="margin-top:10px;" onclick="app.closeModal()">Selesai & Transaksi Baru</button>
+            `;
+            this.showModal(html);
+        },
+
+        /* ==========================================================================
+           5. RIWAYAT TRANSAKSI & PRINTING (NOTA & STICKER 1/2, 2/2)
+           ========================================================================== */
+        async renderHistory(container) {
+            const sales = await DB.getAll('sales');
+            sales.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-title">Riwayat Transaksi Penjualan</div>
+                    <div style="max-height:450px; overflow-y:auto;">
+                        ${sales.length === 0 ? '<p style="color:var(--text-muted)">Belum ada transaksi.</p>' : ''}
+                        ${sales.map(s => `
+                            <div style="padding:10px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <b>${s.id}</b> (${s.platform})<br>
+                                    <small style="color:var(--text-muted);">${s.date} ${s.time} \vert{}${s.customer}</small><br>
+                                    <span style="color:var(--accent); font-weight:bold;">Rp ${s.total.toLocaleString()}</span>
+                                </div>
+                                <div style="display:flex; gap:4px;">
+                                    <button class="btn btn-sm btn-outline" onclick="app.printReceipt('${s.id}')">Nota</button>
+                                    <button class="btn btn-sm btn-warning" onclick="app.printStickers('${s.id}')">Sticker</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        },
+
+        async printReceipt(trxId) {
+            const trx = await DB.get('sales', trxId);
+            if (!trx) return alert("Transaksi tidak ditemukan.");
+
+            const area = document.getElementById('printable-area');
+            area.innerHTML = `
+                <div style="width:${this.settings.paperSize === '80mm' ? '78mm' : '52mm'}; font-family:monospace; font-size:11px; padding:5px;">
+                    <center>
+                        <b style="font-size:13px;">${this.settings.storeName}</b><br>
+                        ${this.settings.address}<br>
+                        Telp: ${this.settings.phone}<br>
+                        --------------------------------
+                    </center>
+                    ID: ${trx.id}<br>
+                    Tgl: ${trx.date} ${trx.time}<br>
+                    Plat: ${trx.platform} | Cust: ${trx.customer}<br>
+                    --------------------------------<br>
+                    ${trx.items.map(i => `
+                        <b>${i.name}</b> x${i.qty}<br>
+                        <small>${i.optionsText || ''}</small><br>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span>@${i.unitPrice.toLocaleString()}</span>
+                            <span>Rp ${(i.unitPrice * i.qty).toLocaleString()}</span>
+                        </div>
+                    `).join('')}
+                    --------------------------------<br>
+                    <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:12px;">
+                        <span>TOTAL:</span>
+                        <span>Rp ${trx.total.toLocaleString()}</span>
+                    </div>
+                    --------------------------------<br>
+                    <center style="margin-top:10px;">${this.settings.receiptFooter}</center>
+                </div>
+            `;
+
+            window.print();
+        },
+
+        async printStickers(trxId) {
+            const trx = await DB.get('sales', trxId);
+            if (!trx) return alert("Transaksi tidak ditemukan.");
+
+            // Flatten items based on qty to generate individual stickers
+            let stickerList = [];
+            trx.items.forEach(item => {
+                for (let q = 1; q <= item.qty; q++) {
+                    stickerList.push({
+                        name: item.name,
+                        indexStr: `${q}/${item.qty}`,
+                        optionsText: item.optionsText,
+                        trxId: trx.id,
+                        customer: trx.customer,
+                        platform: trx.platform
+                    });
+                }
+            });
+
+            const area = document.getElementById('printable-area');
+            area.innerHTML = stickerList.map(s => `
+                <div class="sticker-page" style="width:48mm; height:28mm; font-family:monospace; font-size:10px; border:1px dashed #ccc; margin-bottom:5px; box-sizing:border-box;">
+                    <div style="display:flex; justify-content:space-between; font-weight:bold; border-bottom:1px solid #000; padding-bottom:2px;">
+                        <span>${s.platform}</span>
+                        <span>${s.indexStr}</span>
+                    </div>
+                    <div style="font-size:12px; font-weight:800; margin:3px 0;">${s.name}</div>
+                    <div style="font-size:9px; color:#333;">${s.optionsText || '-'}</div>
+                    <div style="font-size:8px; margin-top:4px; text-align:right;">#${s.trxId.slice(-6)} | ${s.customer}</div>
+                </div>
+            `).join('');
+
+            window.print();
+        },
+
+        /* ==========================================================================
+           6. MASTER PRODUK & ADD-ON
+           ========================================================================== */
+        async renderProducts(container) {
+            const products = await DB.getAll('products');
+            const addons = await DB.getAll('addons');
+
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-title">
+                        <span>Master Produk & Menu</span>
+                        <button class="btn btn-sm btn-success" onclick="app.showAddProductModal()">+ Tambah Produk</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Produk</th>
+                                <th>Harga</th>
+                                <th>HPP</th>
+                                <th>Stok</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${products.map(p => `
+                                <tr>
+                                    <td><b>${p.name}</b><br><small style="color:var(--text-muted);">${p.category}</small></td>
+                                    <td>Rp ${p.price.toLocaleString()}</td>
+                                    <td>Rp ${p.hpp.toLocaleString()}</td>
+                                    <td>${p.stock}${p.unit}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline" onclick="app.deleteProduct('${p.id}')">Hapus</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">
+                        <span>Template Add-on / Varian Ekstra</span>
+                        <button class="btn btn-sm btn-accent" onclick="app.showAddAddonModal()">+ Tambah Add-on</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nama Add-on</th>
+                                <th>Kategori Target</th>
+                                <th>Harga Extra</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${addons.map(a => `
+                                <tr>
+                                    <td><b>${a.name}</b></td>
+                                    <td>${a.category}</td>
+                                    <td>Rp ${a.price.toLocaleString()}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline" onclick="app.deleteAddon('${a.id}')">Hapus</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        },
+
+        showAddProductModal() {
+            let html = `
+                <h3>Tambah Produk Baru</h3>
+                <div class="form-group">
+                    <label>Nama Produk:</label>
+                    <input type="text" id="p-name" class="form-control" placeholder="Contoh: Kopi Aren">
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Kategori:</label>
+                        <select id="p-cat" class="form-control">
+                            <option value="Minuman">Minuman</option>
+                            <option value="Makanan">Makanan</option>
+                            <option value="Lainnya">Lainnya</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Jenis Layout:</label>
+                        <select id="p-type" class="form-control">
+                            <option value="drink">Minuman (Opsi Es/Gula/Shot)</option>
+                            <option value="food">Makanan (Opsi Add-on)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Harga Jual Offline (Rp):</label>
+                        <input type="number" id="p-price" class="form-control" placeholder="15000">
+                    </div>
+                    <div class="form-group">
+                        <label>HPP (Modal) (Rp):</label>
+                        <input type="number" id="p-hpp" class="form-control" placeholder="5000">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Stok Awal:</label>
+                        <input type="number" id="p-stock" class="form-control" value="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Satuan:</label>
+                        <input type="text" id="p-unit" class="form-control" value="cup">
+                    </div>
+                </div>
+                <button class="btn btn-success" onclick="app.saveProduct()">Simpan Produk</button>
+                <button class="btn btn-secondary" style="margin-top:6px;" onclick="app.closeModal()">Batal</button>
+            `;
+            this.showModal(html);
+        },
+
+        async saveProduct() {
+            const name = document.getElementById('p-name').value.trim();
+            const cat = document.getElementById('p-cat').value;
+            const type = document.getElementById('p-type').value;
+            const price = parseInt(document.getElementById('p-price').value) || 0;
+            const hpp = parseInt(document.getElementById('p-hpp').value) || 0;
+            const stock = parseInt(document.getElementById('p-stock').value) || 0;
+            const unit = document.getElementById('p-unit').value || 'pcs';
+
+            if (!name || price <= 0) return alert("Mohon lengkapi nama dan harga produk!");
+
+            const newProd = {
+                id: 'P_' + Date.now().toString().slice(-6),
+                name: name,
+                category: cat,
+                type: type,
+                price: price,
+                hpp: hpp,
+                stock: stock,
+                unit: unit,
+                minStock: 5,
+                status: 'Active'
+            };
+
+            await DB.put('products', newProd);
+            this.closeModal();
+            this.renderProducts(document.getElementById('app-body'));
+        },
+
+        async deleteProduct(id) {
+            if (confirm("Hapus produk ini dari master?")) {
+                await DB.delete('products', id);
+                this.renderProducts(document.getElementById('app-body'));
+            }
+        },
+
+        showAddAddonModal() {
+            let html = `
+                <h3>Tambah Template Add-on</h3>
+                <div class="form-group">
+                    <label>Nama Add-on / Extras:</label>
+                    <input type="text" id="a-name" class="form-control" placeholder="Contoh: Ekstra Pedas / Keju">
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Kategori Target:</label>
+                        <select id="a-cat" class="form-control">
+                            <option value="food">Makanan</option>
+                            <option value="drink">Minuman</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Harga Tambahan (Rp):</label>
+                        <input type="number" id="a-price" class="form-control" value="0">
+                    </div>
+                </div>
+                <button class="btn btn-success" onclick="app.saveAddon()">Simpan Add-on</button>
+                <button class="btn btn-secondary" style="margin-top:6px;" onclick="app.closeModal()">Batal</button>
+            `;
+            this.showModal(html);
+        },
+
+        async saveAddon() {
+            const name = document.getElementById('a-name').value.trim();
+            const cat = document.getElementById('a-cat').value;
+            const price = parseInt(document.getElementById('a-price').value) || 0;
+
+            if (!name) return alert("Nama add-on wajib diisi!");
+
+            const addon = {
+                id: 'ADD_' + Date.now().toString().slice(-6),
+                name: name,
+                category: cat,
+                price: price
+            };
+
+            await DB.put('addons', addon);
+            this.closeModal();
+            this.renderProducts(document.getElementById('app-body'));
+        },
+
+        async deleteAddon(id) {
+            if (confirm("Hapus add-on ini?")) {
+                await DB.delete('addons', id);
+                this.renderProducts(document.getElementById('app-body'));
+            }
+        },
+
+        /* ==========================================================================
+           7. STOK & BAHAN BAKU MODULE
+           ========================================================================== */
+        async renderStock(container) {
+            const products = await DB.getAll('products');
+
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-title">Manajemen Stok Produk</div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Produk</th>
+                                <th>Stok Saat Ini</th>
+                                <th>Status</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${products.map(p => `
+                                <tr>
+                                    <td><b>${p.name}</b></td>
+                                    <td><b>${p.stock}</b>${p.unit}</td>
+                                    <td>
+                                        ${p.stock <= p.minStock ? '<span style="color:var(--danger); font-weight:bold;">⚠️ Menipis</span>' : '<span style="color:var(--success);">Aman</span>'}
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline" onclick="app.adjustStockModal('${p.id}')">Update</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        },
+
+        async adjustStockModal(id) {
+            const product = await DB.get('products', id);
+            let html = `
+                <h3>Update Stok: ${product.name}</h3>
+                <p>Stok Saat Ini: <b>${product.stock} ${product.unit}</b></p>
+                <div class="form-group" style="margin-top:10px;">
+                    <label>Jumlah Stok Baru / Tambahan:</label>
+                    <input type="number" id="adj-stock" class="form-control" value="${product.stock}">
+                </div>
+                <button class="btn btn-success" onclick="app.saveStockAdjustment('${product.id}')">Simpan Stok Baru</button>
+                <button class="btn btn-secondary" style="margin-top:6px;" onclick="app.closeModal()">Batal</button>
+            `;
+            this.showModal(html);
+        },
+
+        async saveStockAdjustment(id) {
+            const val = parseInt(document.getElementById('adj-stock').value) || 0;
+            const product = await DB.get('products', id);
+            product.stock = val;
+            await DB.put('products', product);
+            this.closeModal();
+            this.renderStock(document.getElementById('app-body'));
+        },
+
+        /* ==========================================================================
+           8. PENGELUARAN (EXPENSES) MODULE
+           ========================================================================== */
+        async renderExpenses(container) {
+            const expenses = await DB.getAll('expenses');
+            expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-title">
+                        <span>Catatan Pengeluaran Operasional</span>
+                        <button class="btn btn-sm btn-danger" onclick="app.showAddExpenseModal()">+ Pengeluaran</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Tgl</th>
+                                <th>Kategori</th>
+                                <th>Ket</th>
+                                <th>Nominal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${expenses.length === 0 ? '<tr><td colspan="4" style="text-align:center;">Belum ada pengeluaran</td></tr>' : ''}
+                            ${expenses.map(e => `
+                                <tr>
+                                    <td><small>${e.date}</small></td>
+                                    <td><b>${e.category}</b></td>
+                                    <td><small>${e.desc}</small></td>
+                                    <td style="color:var(--danger); font-weight:bold;">Rp ${e.amount.toLocaleString()}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        },
+
+        showAddExpenseModal() {
+            const today = new Date().toISOString().split('T')[0];
+            let html = `
+                <h3>Tambah Pengeluaran</h3>
+                <div class="form-group">
+                    <label>Tanggal:</label>
+                    <input type="date" id="exp-date" class="form-control" value="${today}">
+                </div>
+                <div class="form-group">
+                    <label>Kategori:</label>
+                    <select id="exp-cat" class="form-control">
+                        <option value="Bahan Baku">Bahan Baku</option>
+                        <option value="Gaji">Gaji Karyawan</option>
+                        <option value="Listrik & Air">Listrik & Air</option>
+                        <option value="Sewa Tempat">Sewa Tempat</option>
+                        <option value="Kemasan">Kemasan / Packaging</option>
+                        <option value="Lainnya">Lainnya</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Keterangan:</label>
+                    <input type="text" id="exp-desc" class="form-control" placeholder="Contoh: Beli es batu / kantong plastik">
+                </div>
+                <div class="form-group">
+                    <label>Nominal Pengeluaran (Rp):</label>
+                    <input type="number" id="exp-amount" class="form-control" placeholder="50000">
+                </div>
+                <button class="btn btn-danger" onclick="app.saveExpense()">Simpan Pengeluaran</button>
+                <button class="btn btn-secondary" style="margin-top:6px;" onclick="app.closeModal()">Batal</button>
+            `;
+            this.showModal(html);
+        },
+
+        async saveExpense() {
+            const date = document.getElementById('exp-date').value;
+            const cat = document.getElementById('exp-cat').value;
+            const desc = document.getElementById('exp-desc').value.trim();
+            const amount = parseInt(document.getElementById('exp-amount').value) || 0;
+
+            if (amount <= 0) return alert("Nominal pengeluaran harus lebih dari 0!");
+
+            const exp = {
+                id: 'EXP_' + Date.now().toString().slice(-8),
+                date: date,
+                category: cat,
+                desc: desc,
+                amount: amount
+            };
+
+            await DB.put('expenses', exp);
+
+            // Jurnal
+            const journal = {
+                id: 'JRN_' + Date.now(),
+                date: date,
+                ref: exp.id,
+                desc: `Pengeluaran ${cat}: ${desc}`,
+                debitAcc: 'Bebas Operasional',
+                creditAcc: 'Kas',
+                amount: amount
+            };
+            await DB.put('journalEntries', journal);
+
+            this.closeModal();
+            this.renderExpenses(document.getElementById('app-body'));
+        },
+
+        /* ==========================================================================
+           9. LAPORAN & LABA RUGI (EXPORT EXCEL & PDF)
+           ========================================================================== */
+        async renderReports(container) {
+            const sales = await DB.getAll('sales');
+            const expenses = await DB.getAll('expenses');
+
+            const totalOmzet = sales.filter(s => s.status !== 'CANCELLED').reduce((a, c) => a + c.total, 0);
+            const totalHpp = sales.filter(s => s.status !== 'CANCELLED').reduce((a, c) => a + c.totalHpp, 0);
+            const totalExp = expenses.reduce((a, c) => a + c.amount, 0);
+            const grossProfit = totalOmzet - totalHpp;
+            const netProfit = grossProfit - totalExp;
+
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-title">Laporan Laba Rugi Akumulasi</div>
+                    <div style="font-size:0.85rem;">
+                        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                            <span>Total Penjualan (Omzet)</span>
+                            <b>Rp ${totalOmzet.toLocaleString()}</b>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); color:var(--danger);">
+                            <span>Total HPP (Bebas Pokok)</span>
+                            <span>- Rp ${totalHpp.toLocaleString()}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); font-weight:bold;">
+                            <span>Laba Kotor</span>
+                            <span style="color:var(--success);">Rp ${grossProfit.toLocaleString()}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); color:var(--danger);">
+                            <span>Total Bebas Operasional</span>
+                            <span>- Rp ${totalExp.toLocaleString()}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; padding:10px 0; font-weight:800; font-size:1.05rem;">
+                            <span>LABA BERSIH:</span>
+                            <span style="color:var(--success);">Rp ${netProfit.toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Export Laporan</div>
+                    <div class="grid-2">
+                        <button class="btn btn-success" onclick="app.exportExcel()">📑 Export Excel (.xlsx)</button>
+                        <button class="btn btn-danger" onclick="app.exportPDF()">📄 Export PDF</button>
+                    </div>
+                </div>
+            `;
+        },
+
+        async exportExcel() {
+            const sales = await DB.getAll('sales');
+            const expenses = await DB.getAll('expenses');
+
+            const salesData = sales.map(s => ({
+                ID: s.id,
+                Tanggal: s.date,
+                Jam: s.time,
+                Platform: s.platform,
+                Pelanggan: s.customer,
+                Total: s.total,
+                HPP: s.totalHpp,
+                Laba_Kotor: s.total - s.totalHpp
+            }));
+
+            const wb = XLSX.utils.book_new();
+            const wsSales = XLSX.utils.json_to_sheet(salesData);
+            const wsExpenses = XLSX.utils.json_to_sheet(expenses);
+
+            XLSX.utils.book_append_sheet(wb, wsSales, "Penjualan");
+            XLSX.utils.book_append_sheet(wb, wsExpenses, "Pengeluaran");
+
+            XLSX.writeFile(wb, `Laporan_POS_${new Date().toISOString().split('T')[0]}.xlsx`);
+        },
+
+        async exportPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.setFontSize(16);
+            doc.text(this.settings.storeName, 14, 15);
+            doc.setFontSize(10);
+            doc.text(`Laporan Keuangan & Penjualan - Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+
+            const sales = await DB.getAll('sales');
+            const tableData = sales.map(s => [s.id, s.date, s.platform, s.customer, `Rp ${s.total.toLocaleString()}`]);
+
+            doc.autoTable({
+                startY: 28,
+                head: [['ID', 'Tanggal', 'Platform', 'Pelanggan', 'Total']],
+                body: tableData,
+            });
+
+            doc.save(`Laporan_POS_${new Date().toISOString().split('T')[0]}.pdf`);
+        },
+
+        /* ==========================================================================
+           10. TUTUP KAS HARIAN MODULE
+           ========================================================================== */
+        async renderClosing(container) {
+            const sales = await DB.getAll('sales');
+            const today = new Date().toISOString().split('T')[0];
+            const todaySales = sales.filter(s => s.date === today && s.status !== 'CANCELLED');
+            const systemCash = todaySales.reduce((a, c) => a + c.total, 0);
+
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-title">Tutup Kas Harian (${today})</div>
+                    <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px;">Masukan jumlah fisik uang tunai di laci kasir untuk menghitung selisih.</p>
+                    <div style="background:var(--bg); padding:10px; border-radius:6px; margin-bottom:12px;">
+                        <small>Total Penjualan Sistem (Hari Ini):</small>
+                        <h3 style="color:var(--accent)">Rp ${systemCash.toLocaleString()}</h3>
+                    </div>
+                    <div class="form-group">
+                        <label>Fisik Uang Tunai di Kasir (Rp):</label>
+                        <input type="number" id="cash-actual" class="form-control" placeholder="0" oninput="app.calculateCashDiff(${systemCash})">
+                    </div>
+                    <div id="diff-container" style="margin-bottom:12px; font-weight:bold;"></div>
+                    <button class="btn btn-success" onclick="app.saveDailyClosing(${systemCash})">Simpan & Lock Tutup Kas</button>
+                </div>
+            `;
+        },
+
+        calculateCashDiff(systemCash) {
+            const actual = parseInt(document.getElementById('cash-actual').value) || 0;
+            const diff = actual - systemCash;
+            const container = document.getElementById('diff-container');
+
+            if (diff === 0) {
+                container.innerHTML = `<span style="color:var(--success);">✓ KAS SESUAI (Tidak ada selisih)</span>`;
+            } else if (diff < 0) {
+                container.innerHTML = `<span style="color:var(--danger);">⚠️ SELISIH MINUS: Rp ${Math.abs(diff).toLocaleString()} (Uang Kurang)</span>`;
+            } else {
+                container.innerHTML = `<span style="color:var(--warning);">⚠️ SELISIH PLUS: Rp ${diff.toLocaleString()} (Uang Lebih)</span>`;
+            }
+        },
+
+        async saveDailyClosing(systemCash) {
+            const actual = parseInt(document.getElementById('cash-actual').value) || 0;
+            const today = new Date().toISOString().split('T')[0];
+
+            const closing = {
+                id: 'CLOSE_' + today,
+                date: today,
+                systemCash: systemCash,
+                actualCash: actual,
+                diff: actual - systemCash,
+                createdAt: new Date().toISOString()
+            };
+
+            await DB.put('dailyClosings', closing);
+            alert("Tutup Kas Berhasil Disimpan!");
+            this.switchTab('dashboard');
+        },
+
+        /* ==========================================================================
+           11. PENGATURAN, BACKUP & RESTORE MODULE
+           ========================================================================== */
+        async renderSettings(container) {
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-title">Profil & Informasi Toko</div>
+                    <div class="form-group">
+                        <label>Nama Usaha:</label>
+                        <input type="text" id="set-name" class="form-control" value="${this.settings.storeName}">
+                    </div>
+                    <div class="form-group">
+                        <label>Alamat:</label>
+                        <input type="text" id="set-address" class="form-control" value="${this.settings.address}">
+                    </div>
+                    <div class="form-group">
+                        <label>No. Telepon / WA:</label>
+                        <input type="text" id="set-phone" class="form-control" value="${this.settings.phone}">
+                    </div>
+                    <button class="btn btn-accent" onclick="app.saveStoreSettings()">Simpan Profil</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Backup & Restore Database</div>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;">Simpan file backup JSON untuk memindahkan data ke HP lain atau cadangan harian.</p>
+                    <div class="grid-2">
+                        <button class="btn btn-success" onclick="app.backupDatabase()">💾 Backup JSON</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('file-restore').click()">📥 Restore JSON</button>
+                    </div>
+                    <input type="file" id="file-restore" style="display:none;" accept=".json" onchange="app.restoreDatabase(this)">
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Import Bulk Data via Excel</div>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;">Upload file template Excel untuk memperbarui master produk secara massal.</p>
+                    <button class="btn btn-outline" style="margin-bottom:8px;" onclick="app.downloadExcelTemplate()">⬇️ Download Template Excel</button>
+                    <button class="btn btn-warning" onclick="document.getElementById('file-import-excel').click()">📤 Import Excel File</button>
+                    <input type="file" id="file-import-excel" style="display:none;" accept=".xlsx, .xls" onchange="app.importExcelProducts(this)">
+                </div>
+            `;
+        },
+
+        async saveStoreSettings() {
+            this.settings.storeName = document.getElementById('set-name').value;
+            this.settings.address = document.getElementById('set-address').value;
+            this.settings.phone = document.getElementById('set-phone').value;
+
+            await DB.put('settings', this.settings);
+            document.getElementById('txt-store-name').innerText = this.settings.storeName;
+            alert("Pengaturan Toko Berhasil Disimpan!");
+        },
+
+        async backupDatabase() {
+            const data = {};
+            const stores = ['settings', 'products', 'categories', 'ingredients', 'sales', 'expenses', 'addons'];
+            for (let s of stores) {
+                data[s] = await DB.getAll(s);
+            }
+
+            const jsonStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([jsonStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Backup_POS_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+        },
+
+        async restoreDatabase(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (confirm("Restore data akan menimpa data yang ada saat ini. Lanjutkan?")) {
+                        for (let storeName in data) {
+                            if (data[storeName] && Array.isArray(data[storeName])) {
+                                await DB.clearStore(storeName);
+                                for (let item of data[storeName]) {
+                                    await DB.put(storeName, item);
+                                }
+                            }
+                        }
+                        alert("Restore Database Berhasil!");
+                        location.reload();
+                    }
+                } catch (err) {
+                    alert("File backup tidak valid!");
+                }
+            };
+            reader.readAsText(file);
+        },
+
+        downloadExcelTemplate() {
+            const templateData = [
+                { ID: "P01", Nama_Produk: "Kopi Susu Gula Aren", Kategori: "Minuman", Jenis: "drink", Harga_Offline: 15000, HPP: 5500, Stok: 100, Satuan: "cup" },
+                { ID: "P02", Nama_Produk: "Ayam Goreng Bu Jasmine", Kategori: "Makanan", Jenis: "food", Harga_Offline: 22000, HPP: 12000, Stok: 50, Satuan: "porsi" }
+            ];
+
+            const ws = XLSX.utils.json_to_sheet(templateData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "MasterMenu");
+            XLSX.writeFile(wb, "Template_Import_Master_Menu.xlsx");
+        },
+
+        async importExcelProducts(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+                let importedCount = 0;
+                for (let row of jsonData) {
+                    if (row.Nama_Produk && row.Harga_Offline) {
+                        const prod = {
+                            id: row.ID ? String(row.ID) : 'P_' + Date.now() + Math.random().toString().slice(-3),
+                            name: String(row.Nama_Produk),
+                            category: row.Kategori || 'Lainnya',
+                            type: row.Jenis || 'food',
+                            price: parseInt(row.Harga_Offline) || 0,
+                            hpp: parseInt(row.HPP) || 0,
+                            stock: parseInt(row.Stok) || 0,
+                            unit: row.Satuan || 'pcs',
+                            minStock: 5,
+                            status: 'Active'
+                        };
+                        await DB.put('products', prod);
+                        importedCount++;
+                    }
+                }
+
+                alert(`Berhasil mengimpor ${importedCount} produk ke database!`);
+                this.renderProducts(document.getElementById('app-body'));
+            };
+            reader.readAsArrayBuffer(file);
+        },
+
+        /* ==========================================================================
+           12. UTILITY & MODAL HELPERS
+           ========================================================================== */
+        showModal(html) {
+            document.getElementById('modal-body').innerHTML = html;
+            document.getElementById('app-modal').classList.add('active');
+        },
+
+        closeModal() {
+            document.getElementById('app-modal').classList.remove('active');
+        }
+    };
+
+    // Initialize App
+    window.onload = () => app.init();
+    </script>
+</body>
+</html>
