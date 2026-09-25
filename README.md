@@ -138,6 +138,25 @@
 
     <script>
     /* ==========================================================================
+           1. PROTEKSI AKSE/PIN KASIR (TARUH DI BARIS PALING ATAS SCRIPT)
+           ========================================================================== */
+        (function() {
+            const PASSCODE_KASIR = "123456"; // <-- Ganti dengan PIN rahasia kamu
+            const savedPin = localStorage.getItem("pos_pin");
+
+            if (savedPin !== PASSCODE_KASIR) {
+                const inputPin = prompt("Masukkan PIN Akses Kasir/Laporan:");
+                if (inputPin === PASSCODE_KASIR) {
+                    localStorage.setItem("pos_pin", inputPin);
+                } else {
+                    alert("PIN Salah! Akses ditolak.");
+                    // Sembunyikan/kosongkan seluruh isi halaman jika PIN salah
+                    document.body.innerHTML = "<h2 style='text-align:center; margin-top:50px; font-family:sans-serif;'>🔒 Akses Ditolak. Refresh halaman untuk mencoba lagi.</h2>";
+                    throw new Error("Akses ditolak: PIN Salah");
+                }
+            }
+        })();
+    /* ==========================================================================
        1. DATABASE ENGINE (IndexedDB)
        ========================================================================== */
     const DB_NAME = "POS_FULL_DATABASE";
