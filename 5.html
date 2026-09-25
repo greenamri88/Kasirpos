@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<Khairul Amri>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
@@ -137,6 +137,25 @@
     <div id="printable-area"></div>
 
     <script>
+    /* ==========================================================================
+           1. PROTEKSI AKSE/PIN KASIR (TARUH DI BARIS PALING ATAS SCRIPT)
+           ========================================================================== */
+        (function() {
+            const PASSCODE_KASIR = "123456"; // <-- Ganti dengan PIN rahasia kamu
+            const savedPin = localStorage.getItem("pos_pin");
+
+            if (savedPin !== PASSCODE_KASIR) {
+                const inputPin = prompt("Masukkan PIN Akses Kasir/Laporan:");
+                if (inputPin === PASSCODE_KASIR) {
+                    localStorage.setItem("pos_pin", inputPin);
+                } else {
+                    alert("PIN Salah! Akses ditolak.");
+                    // Sembunyikan/kosongkan seluruh isi halaman jika PIN salah
+                    document.body.innerHTML = "<h2 style='text-align:center; margin-top:50px; font-family:sans-serif;'>🔒 Akses Ditolak. Refresh halaman untuk mencoba lagi.</h2>";
+                    throw new Error("Akses ditolak: PIN Salah");
+                }
+            }
+        })();
     /* ==========================================================================
        1. DATABASE ENGINE (IndexedDB)
        ========================================================================== */
@@ -1194,100 +1213,196 @@
         },
 
         /* ==========================================================================
-           9. LAPORAN & LABA RUGI (EXPORT EXCEL & PDF)
-           ========================================================================== */
-        async renderReports(container) {
-            const sales = await DB.getAll('sales');
-            const expenses = await DB.getAll('expenses');
+           9. LAPORAN & LABA RUGI (EXPORT EXCEL & PDF WITH DATE FILTER)
+   ========================================================================== */
+async renderReports(container) {
+    // 1. Ambil data mentah dari DB
+    const allSales = await DB.getAll('sales');
+    const allExpenses = await DB.getAll('expenses');
 
-            const totalOmzet = sales.filter(s => s.status !== 'CANCELLED').reduce((a, c) => a + c.total, 0);
-            const totalHpp = sales.filter(s => s.status !== 'CANCELLED').reduce((a, c) => a + c.totalHpp, 0);
-            const totalExp = expenses.reduce((a, c) => a + c.amount, 0);
-            const grossProfit = totalOmzet - totalHpp;
-            const netProfit = grossProfit - totalExp;
+    // Default filter: 'month' (Bulan Ini) jika belum pernah diset
+    if (!this.reportFilterType) this.reportFilterType = 'month';
 
-            container.innerHTML = `
-                <div class="card">
-                    <div class="card-title">Laporan Laba Rugi Akumulasi</div>
-                    <div style="font-size:0.85rem;">
-                        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                            <span>Total Penjualan (Omzet)</span>
-                            <b>Rp ${totalOmzet.toLocaleString()}</b>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); color:var(--danger);">
-                            <span>Total HPP (Bebas Pokok)</span>
-                            <span>- Rp ${totalHpp.toLocaleString()}</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); font-weight:bold;">
-                            <span>Laba Kotor</span>
-                            <span style="color:var(--success);">Rp ${grossProfit.toLocaleString()}</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); color:var(--danger);">
-                            <span>Total Bebas Operasional</span>
-                            <span>- Rp ${totalExp.toLocaleString()}</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; padding:10px 0; font-weight:800; font-size:1.05rem;">
-                            <span>LABA BERSIH:</span>
-                            <span style="color:var(--success);">Rp ${netProfit.toLocaleString()}</span>
-                        </div>
+    // Helper untuk memformat objek Date ke YYYY-MM-DD
+    const formatDate = (date) => date.toISOString().split('T')[0];
+
+    // Tentukan Tanggal Mulai (startDate) & Tanggal Selesai (endDate)
+    const today = new Date();
+    let startDate = '';
+    let endDate = formatDate(today);
+
+    if (this.reportFilterType === 'today') {
+        startDate = formatDate(today);
+    } else if (this.reportFilterType === 'week') {
+        const last7 = new Date();
+        last7.setDate(today.getDate() - 6);
+        startDate = formatDate(last7);
+    } else if (this.reportFilterType === 'month') {
+        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+        startDate = formatDate(firstDay);
+    } else if (this.reportFilterType === 'year') {
+        const firstDayYear = new Date(today.getFullYear(), 0, 1);
+        startDate = formatDate(firstDayYear);
+    } else if (this.reportFilterType === 'custom') {
+        startDate = this.reportStartDate || formatDate(today);
+        endDate = this.reportEndDate || formatDate(today);
+    }
+
+    // 2. Filter data Penjualan dan Pengeluaran berdasarkan tanggal
+    const filteredSales = allSales.filter(s => {
+        if (s.status === 'CANCELLED') return false;
+        if (!s.date) return false;
+        return s.date >= startDate && s.date <= endDate;
+    });
+
+    const filteredExpenses = allExpenses.filter(e => {
+        if (!e.date) return false;
+        return e.date >= startDate && e.date <= endDate;
+    });
+
+    // 3. Kalkulasi Angka Laba Rugi
+    const totalOmzet = filteredSales.reduce((a, c) => a + Number(c.total || 0), 0);
+    const totalHpp = filteredSales.reduce((a, c) => a + Number(c.totalHpp || 0), 0);
+    const totalExp = filteredExpenses.reduce((a, c) => a + Number(c.amount || 0), 0);
+    const grossProfit = totalOmzet - totalHpp;
+    const netProfit = grossProfit - totalExp;
+
+    // Simpan data terfilter agar bisa digunakan oleh fungsi export Excel/PDF
+    this.currentFilteredSales = filteredSales;
+    this.currentFilteredExpenses = filteredExpenses;
+    this.currentReportPeriod = { startDate, endDate };
+
+    // 4. Render UI
+    container.innerHTML = `
+        <!-- CARD FILTER TANGGAL -->
+        <div class="card" style="margin-bottom: 1rem;">
+            <div class="card-title">Filter Periode Laporan</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+                <button class="btn ${this.reportFilterType === 'today' ? 'btn-primary' : 'btn-secondary'}" onclick="app.setReportFilter('today')">Hari Ini</button>
+                <button class="btn ${this.reportFilterType === 'week' ? 'btn-primary' : 'btn-secondary'}" onclick="app.setReportFilter('week')">7 Hari Terakhir</button>
+                <button class="btn ${this.reportFilterType === 'month' ? 'btn-primary' : 'btn-secondary'}" onclick="app.setReportFilter('month')">Bulan Ini</button>
+                <button class="btn ${this.reportFilterType === 'year' ? 'btn-primary' : 'btn-secondary'}" onclick="app.setReportFilter('year')">Tahun Ini</button>
+                <button class="btn ${this.reportFilterType === 'custom' ? 'btn-primary' : 'btn-secondary'}" onclick="app.setReportFilter('custom')">Custom Rentang</button>
+            </div>
+
+            ${this.reportFilterType === 'custom' ? `
+                <div style="display:flex; gap:10px; align-items:center; background:var(--bg-subtle, #f5f5f5); padding:10px; border-radius:6px;">
+                    <div>
+                        <label style="font-size:0.75rem; display:block;">Dari Tanggal:</label>
+                        <input type="date" id="repStartDate" value="${startDate}" onchange="app.handleCustomDateChange()" style="padding:4px 8px;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.75rem; display:block;">Sampai Tanggal:</label>
+                        <input type="date" id="repEndDate" value="${endDate}" onchange="app.handleCustomDateChange()" style="padding:4px 8px;">
                     </div>
                 </div>
+            ` : ''}
+        </div>
 
-                <div class="card">
-                    <div class="card-title">Export Laporan</div>
-                    <div class="grid-2">
-                        <button class="btn btn-success" onclick="app.exportExcel()">📑 Export Excel (.xlsx)</button>
-                        <button class="btn btn-danger" onclick="app.exportPDF()">📄 Export PDF</button>
-                    </div>
+        <!-- CARD RINGKASAN LABA RUGI -->
+        <div class="card">
+            <div class="card-title">Laporan Laba Rugi</div>
+            <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+                Periode: <b>${startDate}</b> s/d <b>${endDate}</b>
+            </div>
+            <div style="font-size:0.85rem;">
+                <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span>Total Penjualan (Omzet)</span>
+                    <b>Rp ${totalOmzet.toLocaleString('id-ID')}</b>
                 </div>
-            `;
-        },
+                <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); color:var(--danger);">
+                    <span>Total HPP (Beban Pokok)</span>
+                    <span>- Rp ${totalHpp.toLocaleString('id-ID')}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); font-weight:bold;">
+                    <span>Laba Kotor</span>
+                    <span style="color:var(--success);">Rp ${grossProfit.toLocaleString('id-ID')}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); color:var(--danger);">
+                    <span>Total Beban Operasional</span>
+                    <span>- Rp ${totalExp.toLocaleString('id-ID')}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding:10px 0; font-weight:800; font-size:1.05rem;">
+                    <span>LABA BERSIH:</span>
+                    <span style="color:${netProfit >= 0 ? 'var(--success)' : 'var(--danger)'};">Rp ${netProfit.toLocaleString('id-ID')}</span>
+                </div>
+            </div>
+        </div>
 
-        async exportExcel() {
-            const sales = await DB.getAll('sales');
-            const expenses = await DB.getAll('expenses');
+        <!-- CARD EXPORT -->
+        <div class="card" style="margin-top:1rem;">
+            <div class="card-title">Export Laporan Terfilter</div>
+            <div class="grid-2">
+                <button class="btn btn-success" onclick="app.exportExcel()">📑 Export Excel (.xlsx)</button>
+                <button class="btn btn-danger" onclick="app.exportPDF()">📄 Export PDF</button>
+            </div>
+        </div>
+    `;
+},
 
-            const salesData = sales.map(s => ({
-                ID: s.id,
-                Tanggal: s.date,
-                Jam: s.time,
-                Platform: s.platform,
-                Pelanggan: s.customer,
-                Total: s.total,
-                HPP: s.totalHpp,
-                Laba_Kotor: s.total - s.totalHpp
-            }));
+// --- HANDLER FUNGSI FILTER ---
+setReportFilter(type) {
+    this.reportFilterType = type;
+    const container = document.getElementById('reportContainer') || document.querySelector('.main-content');
+    this.renderReports(container);
+},
 
-            const wb = XLSX.utils.book_new();
-            const wsSales = XLSX.utils.json_to_sheet(salesData);
-            const wsExpenses = XLSX.utils.json_to_sheet(expenses);
+handleCustomDateChange() {
+    this.reportStartDate = document.getElementById('repStartDate').value;
+    this.reportEndDate = document.getElementById('repEndDate').value;
+    const container = document.getElementById('reportContainer') || document.querySelector('.main-content');
+    this.renderReports(container);
+},
 
-            XLSX.utils.book_append_sheet(wb, wsSales, "Penjualan");
-            XLSX.utils.book_append_sheet(wb, wsExpenses, "Pengeluaran");
+// --- EXPORT EXCEL (Sesuai Filter) ---
+async exportExcel() {
+    const sales = this.currentFilteredSales || [];
+    const expenses = this.currentFilteredExpenses || [];
 
-            XLSX.writeFile(wb, `Laporan_POS_${new Date().toISOString().split('T')[0]}.xlsx`);
-        },
+    const salesData = sales.map(s => ({
+        ID: s.id,
+        Tanggal: s.date,
+        Jam: s.time,
+        Platform: s.platform,
+        Pelanggan: s.customer,
+        Total: s.total,
+        HPP: s.totalHpp,
+        Laba_Kotor: (s.total || 0) - (s.totalHpp || 0)
+    }));
 
-        async exportPDF() {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
+    const wb = XLSX.utils.book_new();
+    const wsSales = XLSX.utils.json_to_sheet(salesData);
+    const wsExpenses = XLSX.utils.json_to_sheet(expenses);
 
-            doc.setFontSize(16);
-            doc.text(this.settings.storeName, 14, 15);
-            doc.setFontSize(10);
-            doc.text(`Laporan Keuangan & Penjualan - Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+    XLSX.utils.book_append_sheet(wb, wsSales, "Penjualan");
+    XLSX.utils.book_append_sheet(wb, wsExpenses, "Pengeluaran");
 
-            const sales = await DB.getAll('sales');
-            const tableData = sales.map(s => [s.id, s.date, s.platform, s.customer, `Rp ${s.total.toLocaleString()}`]);
+    const p = this.currentReportPeriod;
+    XLSX.writeFile(wb, `Laporan_POS_${p ? p.startDate + '_sdr_' + p.endDate : 'terfilter'}.xlsx`);
+},
 
-            doc.autoTable({
-                startY: 28,
-                head: [['ID', 'Tanggal', 'Platform', 'Pelanggan', 'Total']],
-                body: tableData,
-            });
+// --- EXPORT PDF (Sesuai Filter) ---
+async exportPDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const p = this.currentReportPeriod || {};
 
-            doc.save(`Laporan_POS_${new Date().toISOString().split('T')[0]}.pdf`);
-        },
+    doc.setFontSize(16);
+    doc.text(this.settings?.storeName || 'Laporan Kasir', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Laporan Keuangan & Penjualan (${p.startDate} s/d ${p.endDate})`, 14, 22);
+
+    const sales = this.currentFilteredSales || [];
+    const tableData = sales.map(s => [s.id, s.date, s.platform, s.customer, `Rp ${(s.total || 0).toLocaleString('id-ID')}`]);
+
+    doc.autoTable({
+        startY: 28,
+        head: [['ID', 'Tanggal', 'Platform', 'Pelanggan', 'Total']],
+        body: tableData,
+    });
+
+    doc.save(`Laporan_POS_${p.startDate + '_sdr_' + p.endDate}.pdf`);
+}
 
         /* ==========================================================================
            10. TUTUP KAS HARIAN MODULE
