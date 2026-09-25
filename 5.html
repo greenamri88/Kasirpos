@@ -137,6 +137,7 @@
     <div id="printable-area"></div>
 
     <script>
+        
     /* ==========================================================================
            1. PROTEKSI AKSE/PIN KASIR (TARUH DI BARIS PALING ATAS SCRIPT)
            ========================================================================== */
@@ -156,6 +157,179 @@
                 }
             }
         })();
+        / ==========================================
+// FITUR MANAJEMEN TANGGAL & BACKUP OTOMATIS
+// ==========================================
+
+// 1. Inisialisasi Tanggal Operasional
+let currentOperatingDate = localStorage.getItem('operating_date') || getTodayDateString();
+
+function getTodayDateString() {
+    const today = new Date();
+    return today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+}
+
+// 2. Fungsi Membuka Sesi / Pilih Tanggal Operasional
+function setOperatingDate(selectedDate) {
+    if (!selectedDate) {
+        alert("Silakan pilih tanggal operasional yang valid.");
+        return;
+    }
+
+    const previousDate = localStorage.getItem('operating_date');
+    
+    // Jika berganti tanggal/hari baru, lakukan auto-backup data lama terlebih dahulu
+    if (previousDate && previousDate !== selectedDate) {
+        const confirmChange = confirm(`Anda akan mengubah tanggal operasional dari ${previousDate} ke ${selectedDate}.\nSystem akan melakukan Backup Data Otomatis untuk tanggal ${previousDate}. Lanjutkan?`);
+        
+        if (!confirmChange) return;
+
+        // Jalankan Auto-Backup sebelum ganti tanggal
+        autoBackupDailyData(previousDate);
+    }
+
+    // Simpan tanggal operasional baru ke LocalStorage
+    localStorage.setItem('operating_date', selectedDate);
+    currentOperatingDate = selectedDate;
+    
+    // Tampilkan notifikasi
+    alert(`Tanggal operasional aktif set ke: ${selectedDate}`);
+    
+    // Refresh tampilan data transaksi & kasir sesuai tanggal aktif
+    loadTransactionsByDate(selectedDate);
+    updateDateDisplay();
+}
+
+// 3. Fungsi Auto-Backup Data Harian ke LocalStorage & Download JSON
+async function autoBackupDailyData(dateStr) {
+    try {
+        const transactions = await getTransactionsByDateFromDB(dateStr);
+        const expenses = await getExpensesByDateFromDB(dateStr);
+
+        const backupPayload = {
+            backupDate: dateStr,
+            createdAt: new Date().toISOString(),
+            transactions: transactions || [],
+            expenses: expenses || []
+        };
+
+        // A. Simpan Snapshot di LocalStorage sebagai cadangan lokal
+        const localBackupKey = `backup_pos_${dateStr}`;
+        localStorage.setItem(localBackupKey, JSON.stringify(backupPayload));
+
+        // B. Buat File JSON Otomatis yang dapat diunduh pengguna
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupPayload, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `BACKUP_POS_${dateStr}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+
+        console.log(`Auto-backup sukses untuk tanggal: ${dateStr}`);
+    } catch (err) {
+        console.error("Gagal melakukan auto-backup:", err);
+        alert("Peringatan: Gagal melakukan backup otomatis data hari sebelumnya.");
+    }
+}
+
+// 4. Fungsi Mulai Hari Baru (Reset Sesi Kasir)
+function startNewDaySession() {
+    const today = getTodayDateString();
+    
+    const confirmStart = confirm(`Apakah Anda yakin ingin MEMULAI HARI BARU (${today})?\nData transaksi hari ini akan dimulai dari awal (Rp 0), dan data sebelumnya sudah tersimpan aman di database.`);
+    
+    if (confirmStart) {
+        // Melakukan backup otomatis hari sebelumnya
+        if (currentOperatingDate) {
+            autoBackupDailyData(currentOperatingDate);
+        }
+
+        // Set tanggal ke hari ini
+        setOperatingDate(today);
+
+        // Reset Keranjang & Sesi Kas
+        if (typeof cart !== 'undefined') cart = [];
+        if (typeof updateCartUI === 'function') updateCartUI();
+        
+        alert(`Sesi Hari Baru (${today}) Berhasil Dimulai! Anda siap melayani transaksi.`);
+    }
+}
+
+// 5. Helper Query Data dari IndexedDB berdasarkan Tanggal (Safe Error Handling)
+function getTransactionsByDateFromDB(dateStr) {
+    return new Promise((resolve) => {
+        if (!db) {
+            resolve([]);
+            return;
+        }
+
+        try {
+            const tx = db.transaction("transactions", "readonly");
+            const store = tx.objectStore("transactions");
+            const request = store.getAll();
+
+            request.onsuccess = function() {
+                const allData = request.result || [];
+                // Filter berdasarkan tanggal (asumsi item memiliki field 'date' berformat YYYY-MM-DD)
+                const filtered = allData.filter(item => item.date && item.date.startsWith(dateStr));
+                resolve(filtered);
+            };
+
+            request.onerror = function() {
+                console.warn("Gagal mengambil data transaksi dari IndexedDB");
+                resolve([]);
+            };
+        } catch (e) {
+            console.error("Error IndexedDB:", e);
+            resolve([]);
+        }
+    });
+}
+
+function getExpensesByDateFromDB(dateStr) {
+    return new Promise((resolve) => {
+        if (!db) {
+            resolve([]);
+            return;
+        }
+
+        try {
+            const tx = db.transaction("expenses", "readonly");
+            const store = tx.objectStore("expenses");
+            const request = store.getAll();
+
+            request.onsuccess = function() {
+                const allData = request.result || [];
+                const filtered = allData.filter(item => item.date && item.date.startsWith(dateStr));
+                resolve(filtered);
+            };
+
+            request.onerror = function() {
+                resolve([]);
+            };
+        } catch (e) {
+            resolve([]);
+        }
+    });
+}
+
+// Update Elemen Tampilan Tanggal
+function updateDateDisplay() {
+    const dateElement = document.getElementById("active-operating-date");
+    if (dateElement) {
+        dateElement.textContent = currentOperatingDate;
+    }
+    const dateInput = document.getElementById("date-picker-input");
+    if (dateInput) {
+        dateInput.value = currentOperatingDate;
+    }
+}
+
+// Jalankan otomatis saat halaman selesai dimuat
+document.addEventListener("DOMContentLoaded", () => {
+    updateDateDisplay();
+});
     /* ==========================================================================
        1. DATABASE ENGINE (IndexedDB)
        ========================================================================== */
